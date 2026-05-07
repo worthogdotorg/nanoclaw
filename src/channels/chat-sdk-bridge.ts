@@ -72,6 +72,13 @@ export interface ChatSdkBridgeConfig {
    * and reactions still target the head of the reply.
    */
   maxTextLength?: number;
+  /**
+   * Override the NanoClaw-level channel type identifier. Defaults to
+   * `adapter.name`. Use when running multiple instances of the same underlying
+   * adapter (e.g. a second Discord bot) so each gets a distinct key in the
+   * channel registry and messaging_groups table.
+   */
+  channelType?: string;
 }
 
 /**
@@ -190,9 +197,11 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
     };
   }
 
+  const resolvedChannelType = config.channelType ?? adapter.name;
+
   const bridge: ChannelAdapter = {
-    name: adapter.name,
-    channelType: adapter.name,
+    name: resolvedChannelType,
+    channelType: resolvedChannelType,
     supportsThreads: config.supportsThreads,
 
     async setup(hostConfig: ChannelSetup) {
@@ -220,6 +229,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       // wirings still fire on in-thread mentions.
       chat.onSubscribedMessage(async (thread, message) => {
         const channelId = adapter.channelIdFromThreadId(thread.id);
+
         await setupConfig.onInbound(
           channelId,
           thread.id,
@@ -230,6 +240,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       // @mention in an unsubscribed thread — SDK-confirmed bot mention.
       chat.onNewMention(async (thread, message) => {
         const channelId = adapter.channelIdFromThreadId(thread.id);
+
         await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, true, true));
       });
 
@@ -260,6 +271,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       // flood gate.
       chat.onNewMessage(/[\s\S]*/, async (thread, message) => {
         const channelId = adapter.channelIdFromThreadId(thread.id);
+
         await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, false, true));
       });
 

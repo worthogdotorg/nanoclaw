@@ -24,6 +24,7 @@ import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContaine
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
+import { findSessionForAgent } from './db/sessions.js';
 import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
@@ -83,6 +84,14 @@ export function isContainerRunning(sessionId: string): boolean {
 export function wakeContainer(session: Session): Promise<boolean> {
   if (activeContainers.has(session.id)) {
     log.debug('Container already running', { sessionId: session.id });
+    // Still refresh destinations so admin changes made while the container
+    // was running take effect on the next poll without requiring a restart.
+    if (hasTable(getDb(), 'agent_destinations')) {
+      import('./modules/agent-to-agent/write-destinations.js').then(({ writeDestinations }) => {
+        const agentGroup = getAgentGroup(session.agent_group_id);
+        if (agentGroup) writeDestinations(agentGroup.id, session.id);
+      }).catch(() => {});
+    }
     return Promise.resolve(true);
   }
   const existing = wakePromises.get(session.id);
@@ -266,6 +275,25 @@ function buildMounts(
 
   // Session folder at /workspace (contains inbound.db, outbound.db, outbox/, .claude/)
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
+
+  // If this is a thread session, mount the parent channel session's inbound.db
+  // read-only at /workspace/parent-inbound.db so the agent's list_tasks can see
+  // tasks that live in the parent session (e.g. recurring reminders scheduled
+  // before the thread was created).
+  if (session.thread_id) {
+    const parentThreadId = session.thread_id.replace(/:([^:]+)$/, '');
+    if (parentThreadId !== session.thread_id) {
+      const parentSession = session.messaging_group_id
+        ? findSessionForAgent(agentGroup.id, session.messaging_group_id, parentThreadId)
+        : undefined;
+      if (parentSession) {
+        const parentInboundDb = path.join(sessionDir(agentGroup.id, parentSession.id), 'inbound.db');
+        if (fs.existsSync(parentInboundDb)) {
+          mounts.push({ hostPath: parentInboundDb, containerPath: '/workspace/parent-inbound.db', readonly: true });
+        }
+      }
+    }
+  }
 
   // Agent group folder at /workspace/agent (RW for working files + CLAUDE.local.md)
   mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: false });
