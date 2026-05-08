@@ -5,6 +5,8 @@
  * Scheduling operations are sent as system actions via messages_out — the host
  * reads them during delivery and applies the changes to inbound.db.
  */
+import { Database } from 'bun:sqlite';
+import fs from 'fs';
 import { getInboundDb } from '../db/connection.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
@@ -114,28 +116,30 @@ export const listTasks: McpToolDefinition = {
   },
   async handler(args) {
     const status = args.status as string | undefined;
-    const db = getInboundDb();
-    // One row per series — the live (pending or paused) occurrence. Recurring
-    // tasks accumulate one completed row per firing plus one live follow-up;
-    // exposing the whole pile to the agent is noisy and confuses task identity
-    // ("which id do I cancel?"). The series_id is the stable handle.
-    //
-    // SQLite quirk: when MAX(seq) appears in the SELECT list of a GROUP BY
-    // query, the bare columns take values from the row that contains that max
-    // — that's how we pick "the latest live row per series" in one pass.
-    let rows;
-    if (status) {
-      rows = db
-        .prepare(
-          `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
-             FROM messages_in
-            WHERE kind = 'task' AND status = ?
-            GROUP BY series_id
-            ORDER BY process_after ASC`,
-        )
-        .all(status);
-    } else {
-      rows = db
+
+    type TaskRow = { id: string; status: string; process_after: string | null; recurrence: string | null; content: string };
+
+    function queryTasks(db: Database, statusFilter: string | undefined): TaskRow[] {
+      // One row per series — the live (pending or paused) occurrence. Recurring
+      // tasks accumulate one completed row per firing plus one live follow-up;
+      // exposing the whole pile to the agent is noisy and confuses task identity
+      // ("which id do I cancel?"). The series_id is the stable handle.
+      //
+      // SQLite quirk: when MAX(seq) appears in the SELECT list of a GROUP BY
+      // query, the bare columns take values from the row that contains that max
+      // — that's how we pick "the latest live row per series" in one pass.
+      if (statusFilter) {
+        return db
+          .prepare(
+            `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
+               FROM messages_in
+              WHERE kind = 'task' AND status = ?
+              GROUP BY series_id
+              ORDER BY process_after ASC`,
+          )
+          .all(statusFilter) as TaskRow[];
+      }
+      return db
         .prepare(
           `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
              FROM messages_in
@@ -143,12 +147,38 @@ export const listTasks: McpToolDefinition = {
             GROUP BY series_id
             ORDER BY process_after ASC`,
         )
-        .all();
+        .all() as TaskRow[];
     }
 
-    if ((rows as unknown[]).length === 0) return ok('No tasks found.');
+    const rows = queryTasks(getInboundDb(), status);
 
-    const lines = (rows as Array<{ id: string; status: string; process_after: string | null; recurrence: string | null; content: string }>).map((r) => {
+    // If this is a thread session, also look at the parent channel session's
+    // inbound.db (mounted read-only at /workspace/parent-inbound.db by the host
+    // when the container is spawned). Tasks scheduled before a thread was opened
+    // live in the parent session; this makes them visible from inside threads.
+    const parentDbPath = '/workspace/parent-inbound.db';
+    if (fs.existsSync(parentDbPath)) {
+      let parentDb: Database | null = null;
+      try {
+        parentDb = new Database(parentDbPath, { readonly: true });
+        parentDb.exec('PRAGMA busy_timeout = 5000');
+        parentDb.exec('PRAGMA mmap_size = 0');
+        const parentRows = queryTasks(parentDb, status);
+        const localIds = new Set(rows.map((r) => r.id));
+        for (const r of parentRows) {
+          if (!localIds.has(r.id)) rows.push(r);
+        }
+        rows.sort((a, b) => (a.process_after ?? '').localeCompare(b.process_after ?? ''));
+      } catch (e) {
+        log(`list_tasks: could not read parent-inbound.db: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        parentDb?.close();
+      }
+    }
+
+    if (rows.length === 0) return ok('No tasks found.');
+
+    const lines = rows.map((r) => {
       const content = JSON.parse(r.content);
       const prompt = (content.prompt as string || '').slice(0, 80);
       return `- ${r.id} [${r.status}] at=${r.process_after || 'now'} ${r.recurrence ? `recur=${r.recurrence} ` : ''}→ ${prompt}`;

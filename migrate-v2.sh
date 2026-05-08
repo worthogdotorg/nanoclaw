@@ -135,9 +135,11 @@ BOOTSTRAP_RAW="$STEPS_DIR/01-bootstrap.log"
 export NANOCLAW_BOOTSTRAP_LOG="$BOOTSTRAP_RAW"
 
 if bash "$PROJECT_ROOT/setup.sh" > "$BOOTSTRAP_RAW" 2>&1; then
-  # Parse the status block from setup.sh output
-  STATUS=$(grep '^STATUS:' "$BOOTSTRAP_RAW" | head -1 | sed 's/^STATUS: *//')
-  NODE_VERSION=$(grep '^NODE_VERSION:' "$BOOTSTRAP_RAW" | head -1 | sed 's/^NODE_VERSION: *//')
+  # Parse the status block from setup.sh output — scope to the BOOTSTRAP
+  # section only, because install-node.sh also emits STATUS: lines earlier
+  # in the same log and a bare grep would pick those up first.
+  STATUS=$(awk '/^=== NANOCLAW SETUP: BOOTSTRAP ===/,/^=== END ===/' "$BOOTSTRAP_RAW" | grep '^STATUS:' | head -1 | sed 's/^STATUS: *//')
+  NODE_VERSION=$(awk '/^=== NANOCLAW SETUP: BOOTSTRAP ===/,/^=== END ===/' "$BOOTSTRAP_RAW" | grep '^NODE_VERSION:' | head -1 | sed 's/^NODE_VERSION: *//')
 
   if [ "$STATUS" = "success" ]; then
     step_ok "Prerequisites ready $(dim "(node $NODE_VERSION)")"
@@ -158,6 +160,14 @@ else
   dim "  Full log: $BOOTSTRAP_RAW"
   echo
   abort "bootstrap"
+fi
+
+# node@22 is keg-only on macOS when another node version is installed — its
+# bin dir (and the corepack-managed pnpm shim) won't be on PATH. Prepend it
+# here so subsequent pnpm calls in this script work.
+if [ -x "/usr/local/opt/node@22/bin/node" ]; then
+  export PATH="/usr/local/opt/node@22/bin:$PATH"
+  hash -r 2>/dev/null || true
 fi
 
 # setup.sh may have installed pnpm to a prefix not on our PATH — replay

@@ -27,6 +27,10 @@ case "$(uname -s)" in
       exit 1
     fi
     brew install node@22
+    # node@22 is keg-only when another node version is installed — it won't be
+    # symlinked into /usr/local/bin. Prepend the keg bin dir so the PATH check
+    # below (and any subsequent script) finds it.
+    export PATH="/usr/local/opt/node@22/bin:$PATH"
     ;;
   Linux)
     echo "STEP: nodesource-setup"

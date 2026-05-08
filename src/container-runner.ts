@@ -87,10 +87,12 @@ export function wakeContainer(session: Session): Promise<boolean> {
     // Still refresh destinations so admin changes made while the container
     // was running take effect on the next poll without requiring a restart.
     if (hasTable(getDb(), 'agent_destinations')) {
-      import('./modules/agent-to-agent/write-destinations.js').then(({ writeDestinations }) => {
-        const agentGroup = getAgentGroup(session.agent_group_id);
-        if (agentGroup) writeDestinations(agentGroup.id, session.id);
-      }).catch(() => {});
+      import('./modules/agent-to-agent/write-destinations.js')
+        .then(({ writeDestinations }) => {
+          const agentGroup = getAgentGroup(session.agent_group_id);
+          if (agentGroup) writeDestinations(agentGroup.id, session.id);
+        })
+        .catch(() => {});
     }
     return Promise.resolve(true);
   }

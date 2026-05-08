@@ -274,6 +274,7 @@ export class ClaudeProvider implements AgentProvider {
       options: {
         cwd: input.cwd,
         additionalDirectories: this.additionalDirectories,
+        model: 'claude-haiku-4-5-20251001',
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
         systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,

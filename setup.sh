@@ -188,6 +188,14 @@ if [ "$NODE_OK" = "false" ]; then
   echo "Node not found — installing via setup/install-node.sh"
   if bash "$PROJECT_ROOT/setup/install-node.sh" 2>&1 | tee -a "$LOG_FILE"; then
     hash -r 2>/dev/null || true
+    # node@22 is keg-only on macOS when another node version is already
+    # installed — it won't be symlinked into /usr/local/bin. The PATH export
+    # inside install-node.sh only affects that subprocess, so we must prepend
+    # the keg bin dir here in the current shell before re-checking for node.
+    if [ "$PLATFORM" = "macos" ] && [ -x "/usr/local/opt/node@22/bin/node" ]; then
+      export PATH="/usr/local/opt/node@22/bin:$PATH"
+      log "Prepended node@22 keg bin to PATH: /usr/local/opt/node@22/bin"
+    fi
     check_node
   else
     log "install-node.sh failed"
