@@ -56,6 +56,8 @@ du -sh /Volumes/nanoclaw_backup/
 
 Runs every 8 hours: **2:00 AM, 10:00 AM, 6:00 PM**. Plist: `~/Library/LaunchAgents/com.nanoclaw.backup.plist`
 
+The launchd job runs via `~/Applications/NanoClawBackup.app` — an AppleScript app wrapper that must be granted **Full Disk Access** in System Settings so it can write to the external APFS backup volume. Without FDA, launchd's bash process cannot create directories on external volumes (macOS TCC restriction).
+
 ```bash
 # Check it's registered
 launchctl list | grep com.nanoclaw.backup
@@ -65,6 +67,9 @@ launchctl list | grep com.nanoclaw.backup
 
 # launchd stdout/stderr
 tail -20 ~/Library/Logs/nanoclaw-backup.log
+
+# Backup status (written after every run)
+cat ~/Library/Logs/nanoclaw-backup-status.json
 ```
 
 To reload after editing the plist:
@@ -72,6 +77,16 @@ To reload after editing the plist:
 launchctl bootout gui/$(id -u)/com.nanoclaw.backup
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.backup.plist
 ```
+
+#### Recreating NanoClawBackup.app after restore
+
+```bash
+mkdir -p ~/Applications
+osacompile -o ~/Applications/NanoClawBackup.app \
+  -e 'do shell script "/usr/local/bin/nanoclaw-backup.sh"'
+```
+
+Then re-grant **Full Disk Access** to `NanoClawBackup.app` in System Settings → Privacy & Security → Full Disk Access.
 
 ### OneCLI Vault
 
