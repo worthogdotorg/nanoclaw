@@ -9,4 +9,3 @@
 import './cli.js';
 import './discord.js';
 import './discord-lupe.js';
-import './emacs.js';
