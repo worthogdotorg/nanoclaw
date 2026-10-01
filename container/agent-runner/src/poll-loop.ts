@@ -1,8 +1,10 @@
+import fs from 'fs';
+import path from 'path';
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
-import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
+import { clearContinuation, migrateLegacyContinuation, setContinuation, setResolvedModel } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
 import {
   formatMessages,
@@ -62,6 +64,49 @@ export interface PollLoopConfig {
   systemContext?: {
     instructions?: string;
   };
+}
+
+const ATTACHMENTS_DIR = '/workspace/agent/attachments';
+
+/**
+ * For each message that carries base64 attachment data, write the data to
+ * /workspace/agent/attachments/ and replace the `data` field with `localPath`.
+ * This lets the formatter render a readable file reference that Claude Code
+ * can open with the Read tool.  Messages without attachment data pass through
+ * unchanged.
+ */
+function materializeAttachments(messages: MessageInRow[]): MessageInRow[] {
+  return messages.map((msg) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let content: Record<string, any>;
+    try {
+      content = JSON.parse(msg.content);
+    } catch {
+      return msg;
+    }
+    if (!Array.isArray(content.attachments)) return msg;
+
+    let changed = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated = content.attachments.map((att: Record<string, any>) => {
+      if (!att.data) return att;
+      try {
+        fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
+        const filename = att.name || `attachment-${Date.now()}`;
+        // Avoid collisions if the same filename is uploaded multiple times.
+        const dest = path.join(ATTACHMENTS_DIR, filename);
+        fs.writeFileSync(dest, Buffer.from(att.data as string, 'base64'));
+        changed = true;
+        const { data: _data, ...rest } = att;
+        return { ...rest, localPath: `attachments/${filename}` };
+      } catch {
+        return att;
+      }
+    });
+
+    if (!changed) return msg;
+    return { ...msg, content: JSON.stringify({ ...content, attachments: updated }) };
+  });
 }
 
 /**
@@ -197,6 +242,9 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       log(`All ${normalMessages.length} non-command message(s) gated by script, skipping query`);
       continue;
     }
+
+    // Materialize any base64 attachment data to disk so the agent can read them.
+    keep = materializeAttachments(keep);
 
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
@@ -432,6 +480,9 @@ async function processQuery(
         // effectively orphaned and the next message started a blank
         // Claude session with no prior context.
         setContinuation(providerName, event.continuation);
+        if (event.model) {
+          setResolvedModel(providerName, event.model);
+        }
       } else if (event.type === 'result') {
         // A result — with or without text — means the turn is done. Mark
         // the initial batch completed now so the host sweep doesn't see
@@ -467,7 +518,7 @@ async function processQuery(
 function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   switch (event.type) {
     case 'init':
-      log(`Session: ${event.continuation}`);
+      log(`Session: ${event.continuation}${event.model ? ` (model: ${event.model})` : ''}`);
       break;
     case 'result':
       log(`Result: ${event.text ? event.text.slice(0, 200) : '(empty)'}`);

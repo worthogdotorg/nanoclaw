@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { initTestSessionDb, closeSessionDb, getInboundDb } from './db/connection.js';
 import { getPendingMessages } from './db/messages-in.js';
 import { formatMessages, stripInternalTags } from './formatter.js';
-import { TIMEZONE } from './timezone.js';
+import { TIMEZONE, formatLocalTime } from './timezone.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -88,6 +88,30 @@ describe('multi-message chat batches', () => {
     expect(firstIdx).toBeGreaterThan(0);
     expect(secondIdx).toBeGreaterThan(firstIdx);
     expect(thirdIdx).toBeGreaterThan(secondIdx);
+  });
+});
+
+describe('<task> time attribute', () => {
+  // Regression guard: recurring task rows are inserted right after the
+  // *previous* occurrence fires — for a daily task that's ~24h before this
+  // row actually runs. Rendering `msg.timestamp` (row creation time) as the
+  // task's `time=` told the agent it was still yesterday, which broke
+  // same-day vs next-day reasoning (e.g. Tia labeling today's calendar
+  // events as "tomorrow"). The task's `time=` must reflect actual current
+  // time, not whenever the row happened to be created.
+  it('uses current time, not the stale row-creation timestamp', () => {
+    const yesterdayIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    insertMessage('t1', 'task', { prompt: 'do the thing' }, { timestamp: yesterdayIso });
+
+    const result = formatMessages(getPendingMessages());
+    const match = result.match(/<task[^>]*\btime="([^"]+)"/);
+    expect(match).not.toBeNull();
+
+    const expectedNow = formatLocalTime(new Date().toISOString(), TIMEZONE);
+    const staleYesterday = formatLocalTime(yesterdayIso, TIMEZONE);
+
+    expect(match![1]).toBe(expectedNow);
+    expect(match![1]).not.toBe(staleYesterday);
   });
 });
 

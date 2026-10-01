@@ -147,20 +147,36 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
       const enriched = [];
       for (const att of message.attachments) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = att as unknown as Record<string, any>;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const entry: Record<string, any> = {
           type: att.type,
           name: att.name,
           mimeType: att.mimeType,
           size: att.size,
-          width: (att as unknown as Record<string, unknown>).width,
-          height: (att as unknown as Record<string, unknown>).height,
+          width: raw.width,
+          height: raw.height,
         };
         if (att.fetchData) {
           try {
             const buffer = await att.fetchData();
             entry.data = buffer.toString('base64');
           } catch (err) {
-            log.warn('Failed to download attachment', { type: att.type, err });
+            log.warn('Failed to download attachment via fetchData', { type: att.type, err });
+          }
+        } else if (raw.url) {
+          // Fallback for adapters (e.g. Discord) that expose a URL but don't implement fetchData.
+          // Download now while we're on the host — the URL may expire before the agent runs.
+          try {
+            const res = await fetch(raw.url as string);
+            if (res.ok) {
+              const buf = Buffer.from(await res.arrayBuffer());
+              entry.data = buf.toString('base64');
+            } else {
+              log.warn('Failed to fetch attachment URL', { type: att.type, status: res.status });
+            }
+          } catch (err) {
+            log.warn('Failed to fetch attachment URL', { type: att.type, err });
           }
         }
         enriched.push(entry);

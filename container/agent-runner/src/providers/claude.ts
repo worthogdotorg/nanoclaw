@@ -401,7 +401,6 @@ export class ClaudeProvider implements AgentProvider {
       options: {
         cwd: input.cwd,
         additionalDirectories: this.additionalDirectories,
-        model: 'claude-haiku-4-5-20251001',
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
         systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,
@@ -411,7 +410,7 @@ export class ClaudeProvider implements AgentProvider {
         ],
         disallowedTools: SDK_DISALLOWED_TOOLS,
         env: this.env,
-        model: this.model,
+        model: this.model ?? 'claude-haiku-4-5-20251001',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         effort: this.effort as any,
         permissionMode: 'bypassPermissions',
@@ -431,6 +430,15 @@ export class ClaudeProvider implements AgentProvider {
 
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
       let messageCount = 0;
+      // Accumulates every assistant text block seen during the current turn.
+      // The SDK's 'result' message only carries the *last* text segment —
+      // if the agent emits a properly-wrapped <message to="..."> block and
+      // then does more tool work (a retry, a follow-up edit) before
+      // finishing, that earlier block never appears in `message.result` and
+      // silently never gets dispatched. Concatenating every text block seen
+      // since the last result keeps earlier <message> blocks intact
+      // regardless of what the agent does afterward. Reset after each result.
+      let turnText = '';
       for await (const message of sdkResult) {
         if (aborted) return;
         messageCount++;
@@ -439,9 +447,22 @@ export class ClaudeProvider implements AgentProvider {
         yield { type: 'activity' };
 
         if (message.type === 'system' && message.subtype === 'init') {
-          yield { type: 'init', continuation: message.session_id };
+          const model = (message as { model?: string }).model;
+          yield { type: 'init', continuation: message.session_id, model };
+        } else if (message.type === 'assistant') {
+          const content = (message as { message?: { content?: Array<{ type: string; text?: string }> } }).message
+            ?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && typeof block.text === 'string') {
+                turnText += block.text;
+              }
+            }
+          }
         } else if (message.type === 'result') {
-          const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
+          const resultText = 'result' in message ? (message as { result?: string }).result ?? null : null;
+          const text = turnText || resultText;
+          turnText = '';
           yield { type: 'result', text };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };

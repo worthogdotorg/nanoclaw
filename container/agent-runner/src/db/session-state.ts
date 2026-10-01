@@ -17,6 +17,10 @@ function continuationKey(providerName: string): string {
   return `continuation:${providerName.toLowerCase()}`;
 }
 
+function resolvedModelKey(providerName: string): string {
+  return `resolved_model:${providerName.toLowerCase()}`;
+}
+
 function getValue(key: string): string | undefined {
   const row = getOutboundDb()
     .prepare('SELECT value FROM session_state WHERE key = ?')
@@ -76,4 +80,17 @@ export function setContinuation(providerName: string, id: string): void {
 
 export function clearContinuation(providerName: string): void {
   deleteValue(continuationKey(providerName));
+}
+
+/**
+ * The API's actual resolved model ID from the SDK's init message — ground
+ * truth for "what model is this session running", unlike asking the agent
+ * to self-report (it has no introspective access to its own checkpoint).
+ */
+export function getResolvedModel(providerName: string): string | undefined {
+  return getValue(resolvedModelKey(providerName));
+}
+
+export function setResolvedModel(providerName: string, model: string): void {
+  setValue(resolvedModelKey(providerName), model);
 }

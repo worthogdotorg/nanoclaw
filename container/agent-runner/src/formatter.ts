@@ -198,7 +198,15 @@ function originAttr(msg: MessageInRow): string {
 function formatTaskMessage(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const from = originAttr(msg);
-  const time = formatLocalTime(msg.timestamp, TIMEZONE);
+  // Recurring task rows are created (and stamped with `timestamp`) up to a
+  // full cycle before they actually fire — e.g. a daily task's row is
+  // inserted right after the *previous* day's run, so `msg.timestamp` is
+  // ~24h stale by the time this task is actually processed. That told the
+  // agent "it is yesterday", breaking same-day vs next-day reasoning (e.g.
+  // labeling today's calendar events as "tomorrow"). Use the actual current
+  // time instead — unlike chat messages, a task's creation time isn't
+  // meaningful to the agent, only when it's actually being run matters.
+  const time = formatLocalTime(new Date().toISOString(), TIMEZONE);
   const parts: string[] = [];
   if (content.scriptOutput) {
     parts.push('Script output:', JSON.stringify(content.scriptOutput, null, 2), '');
