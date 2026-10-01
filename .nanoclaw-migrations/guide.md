@@ -198,3 +198,45 @@ Turned out unnecessary on this upstream — drop from future runs:
 - #7 parent-thread `list_tasks` — tasks moved to central `ncl tasks` with isolated sessions;
   the `list_tasks` MCP tool no longer exists.
 - add-opencode SKILL.md model-ID edit — lines no longer present.
+
+## Post-upgrade changes — 2026-10-01
+
+### Extra Discord bots: one shared definition (replaces customization #2)
+
+`src/channels/discord-bots.ts` registers every specialist bot from
+`EXTRA_BOTS = ['lupe', 'sofia', 'antonio']`; `src/channels/index.ts` imports
+`./discord.js` then `./discord-bots.js`. Each bot reads `DISCORD_<NAME>_BOT_TOKEN` /
+`_APPLICATION_ID` / `_PUBLIC_KEY`, registers channel type `discord-<name>` (must stay
+stable — DB rows are keyed on it), assigns `(adapter as any).name = 'discord-<name>'`
+(own property, not a Proxy), reuses `unwrapForwardedSnapshot` from `discord.ts` for
+forwarded messages, and passes `maxTextLength: 2000`. Copy the file as-is.
+
+### Discord button clicks: decode the 4.29 custom_id (customization #10)
+
+`@chat-adapter/discord` 4.29 encodes button custom_id as `<actionId>\n<value>`.
+The Gateway interaction path in `src/channels/chat-sdk-bridge.ts`
+(`handleForwardedEvent`) parsed it raw, so every approval card resolved to `"0\n0"`
+and was ignored. Fix: exported helper `parseNcqCustomId(customId)` strips the
+`\n<value>` suffix before splitting `ncq:<questionId>:<idx>`; tests in
+`chat-sdk-bridge.test.ts` (`describe('parseNcqCustomId')`). **Drop when upstream fixes
+it** — check whether upstream's interaction handler already splits on `\n`.
+
+### Agent configuration (data, not code — survives upgrades)
+
+All four agents: model `claude-sonnet-5-5`, effort `high` (full IDs, because aliases
+like `sonnet` lag the newest model). **On every upgrade:** check the current model
+list; if a newer Sonnet ships, bump with
+`ncl groups config update --id <id> --model <new id>` and verify via
+`session_state` key `resolved_model:claude` in each session's outbound.db.
+
+Specialists (Lupe, Sofia, Antonio) share one setup: own channel engage pattern `.`;
+#general engage `mention`, priority 0, sender_scope all, drop; channels
+`unknown_sender_policy=strict`; DMs wired mention-sticky / known / accumulate with
+`request_approval`; owner is a member; destinations `general`, `discord-general`,
+`dm`, `tia`. Tia's #general pattern skips @mentions of all three bot IDs.
+
+### Known upstream bugs (report, don't patch)
+
+- `container/agent-runner/src/compact-instructions.ts` runs standalone and calls
+  `getAllDestinations()` without registering a mailbox → PreCompact hook fails with
+  "No agent mailbox registered" on every compaction.

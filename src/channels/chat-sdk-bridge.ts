@@ -1091,6 +1091,21 @@ function startLocalWebhookServer(
   });
 }
 
+/**
+ * Split a Discord button custom_id into question id and option tail.
+ * @chat-adapter/discord 4.29 encodes custom_id as `<actionId>\n<value>`
+ * (see its encodeDiscordCustomId); our actionId is `ncq:<questionId>:<idx>`,
+ * so drop the `\n<value>` suffix before parsing — otherwise the tail is
+ * `"0\n0"`, fails the index lookup, and the raw string reaches the handler.
+ */
+export function parseNcqCustomId(customId: string | undefined): { questionId?: string; tail?: string } {
+  const actionId = customId?.split('\n')[0];
+  if (!actionId?.startsWith('ncq:')) return {};
+  const colonIdx = actionId.indexOf(':', 4); // after "ncq:"
+  if (colonIdx === -1) return {};
+  return { questionId: actionId.slice(4, colonIdx), tail: actionId.slice(colonIdx + 1) };
+}
+
 async function handleForwardedEvent(
   body: string,
   adapter: GatewayAdapter,
@@ -1118,15 +1133,7 @@ async function handleForwardedEvent(
       const interactionToken = interaction.token as string;
 
       // Parse the selected option from custom_id
-      let questionId: string | undefined;
-      let tail: string | undefined;
-      if (customId?.startsWith('ncq:')) {
-        const colonIdx = customId.indexOf(':', 4); // after "ncq:"
-        if (colonIdx !== -1) {
-          questionId = customId.slice(4, colonIdx);
-          tail = customId.slice(colonIdx + 1);
-        }
-      }
+      const { questionId, tail } = parseNcqCustomId(customId);
 
       // Update the card to show the selected answer and remove buttons
       const originalEmbeds =

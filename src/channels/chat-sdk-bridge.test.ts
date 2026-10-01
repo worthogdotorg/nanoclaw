@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, AdapterPostableMessage, RawMessage } from 'chat';
 
-import { createChatSdkBridge, splitForLimit } from './chat-sdk-bridge.js';
+import { createChatSdkBridge, parseNcqCustomId, splitForLimit } from './chat-sdk-bridge.js';
 
 vi.mock('../webhook-server.js', () => ({
   registerWebhookAdapter: vi.fn(),
@@ -656,4 +656,19 @@ it('forwards the authenticated instance and message address without editing a de
     await bridge.teardown();
     await closeDb();
   }
+});
+
+describe('parseNcqCustomId', () => {
+  it('parses the plain ncq:<questionId>:<idx> form', () => {
+    expect(parseNcqCustomId('ncq:mg-123-abc:0')).toEqual({ questionId: 'mg-123-abc', tail: '0' });
+  });
+
+  it('drops the \\n<value> suffix @chat-adapter/discord 4.29 appends', () => {
+    expect(parseNcqCustomId('ncq:mg-123-abc:0\n0')).toEqual({ questionId: 'mg-123-abc', tail: '0' });
+  });
+
+  it('ignores non-ncq and missing ids', () => {
+    expect(parseNcqCustomId('other:thing\nx')).toEqual({});
+    expect(parseNcqCustomId(undefined)).toEqual({});
+  });
 });
