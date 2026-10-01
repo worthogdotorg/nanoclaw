@@ -154,7 +154,7 @@ export interface AgentQuery {
 }
 
 export type ProviderEvent =
-  | { type: 'init'; continuation: string }
+  | { type: 'init'; continuation: string; model?: string }
   /**
    * A completed turn. `isError` marks a failed turn and prevents retries.
    * `text` is model output; `error` is an optional user-facing provider error

@@ -17,6 +17,7 @@ import {
   migrateLegacyContinuation,
   setContinuation,
   setCurrentReplyRoute,
+  setResolvedModel,
 } from './db/session-state.js';
 import {
   formatMessages,
@@ -585,6 +586,7 @@ export async function processQuery(
         // effectively orphaned and the next message started a blank
         // Claude session with no prior context.
         setContinuation(providerName, event.continuation);
+        if (event.model) setResolvedModel(providerName, event.model);
       } else if (event.type === 'text') {
         // Assistant text emitted mid-turn (e.g. between tool calls). The
         // final result only carries the LAST assistant text, so complete
@@ -762,7 +764,7 @@ function notifyExchangeComplete(
 function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   switch (event.type) {
     case 'init':
-      log(`Session: ${event.continuation}`);
+      log(`Session: ${event.continuation}${event.model ? ` (model: ${event.model})` : ''}`);
       break;
     case 'result':
       log(`Result: ${event.text ? event.text.slice(0, 200) : '(empty)'}`);

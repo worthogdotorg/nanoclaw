@@ -509,6 +509,20 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           } catch (err) {
             log.warn('Failed to download attachment', { type: att.type, err });
           }
+        } else if (typeof (att as unknown as Record<string, unknown>).url === 'string') {
+          // Fallback for adapters (e.g. Discord) that expose a URL but don't
+          // implement fetchData. Download now on the host — CDN URLs expire.
+          const url = (att as unknown as Record<string, unknown>).url as string;
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              entry.data = Buffer.from(await res.arrayBuffer()).toString('base64');
+            } else {
+              log.warn('Failed to fetch attachment URL', { type: att.type, status: res.status });
+            }
+          } catch (err) {
+            log.warn('Failed to fetch attachment URL', { type: att.type, err });
+          }
         }
         enriched.push(entry);
       }

@@ -276,7 +276,8 @@ export class ClaudeProvider implements AgentProvider {
         // turns them into throttled `activity` and nothing else.
         includePartialMessages: true,
         env: this.env,
-        model: this.inference.model,
+        // Cost guard: agent groups without a configured model run on Haiku.
+        model: this.inference.model ?? 'claude-haiku-4-5-20251001',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         effort: this.inference.effort as any,
         permissionMode: this.executionPolicy.permissionMode,
@@ -319,7 +320,8 @@ export class ClaudeProvider implements AgentProvider {
         yield { type: 'activity' };
 
         if (message.type === 'system' && message.subtype === 'init') {
-          yield { type: 'init', continuation: message.session_id };
+          const model = (message as { model?: string }).model;
+          yield { type: 'init', continuation: message.session_id, model };
         } else if (message.type === 'assistant') {
           // Surface each assistant message's text as it streams in. The final
           // `result` event only carries the LAST assistant text — a wrapped

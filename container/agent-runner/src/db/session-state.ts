@@ -72,6 +72,23 @@ export function clearContinuation(providerName: string): void {
   deleteValue(continuationKey(providerName));
 }
 
+function resolvedModelKey(providerName: string): string {
+  return `resolved_model:${providerName.toLowerCase()}`;
+}
+
+/**
+ * The API's actual resolved model ID from the SDK's init message — ground
+ * truth for "what model is this session running", unlike asking the agent
+ * to self-report (it has no introspective access to its own checkpoint).
+ */
+export function getResolvedModel(providerName: string): string | undefined {
+  return getValue(resolvedModelKey(providerName));
+}
+
+export function setResolvedModel(providerName: string, model: string): void {
+  setValue(resolvedModelKey(providerName), model);
+}
+
 /**
  * Where the message being answered came from, plus its id for the a2a return
  * path. Null routing fields mean the batch has no channel (a task run).
