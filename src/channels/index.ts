@@ -9,3 +9,5 @@
 import './cli.js';
 import './discord.js';
 import './discord-lupe.js';
+import './discord-sofia.js';
+import './discord-antonio.js';
