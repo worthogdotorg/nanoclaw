@@ -162,7 +162,7 @@ onecli secrets create --name "DeepSeek" --type generic \
 
 ```env
 OPENCODE_PROVIDER=openrouter
-OPENCODE_MODEL=openrouter/anthropic/claude-sonnet-4
+OPENCODE_MODEL=openrouter/anthropic/claude-sonnet-5
 OPENCODE_SMALL_MODEL=openrouter/anthropic/claude-haiku-4.5
 ANTHROPIC_BASE_URL=https://openrouter.ai/api/v1
 ```
@@ -180,7 +180,7 @@ When `OPENCODE_PROVIDER` is `anthropic`, OpenCode uses normal Anthropic env insi
 
 ```env
 OPENCODE_PROVIDER=anthropic
-OPENCODE_MODEL=anthropic/claude-sonnet-4-20250514
+OPENCODE_MODEL=anthropic/claude-sonnet-5
 OPENCODE_SMALL_MODEL=anthropic/claude-haiku-4-5-20251001
 ```
 
