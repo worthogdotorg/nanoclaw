@@ -240,3 +240,15 @@ Specialists (Lupe, Sofia, Antonio) share one setup: own channel engage pattern `
 - `container/agent-runner/src/compact-instructions.ts` runs standalone and calls
   `getAllDestinations()` without registering a mailbox → PreCompact hook fails with
   "No agent mailbox registered" on every compaction.
+
+### After every upgrade — checklist
+
+1. Stamp the marker after the final commit: `pnpm exec tsx scripts/upgrade-state.ts set`.
+2. Rebuild Tia's per-group image: `ncl groups restart --id ag-1777855064068-wl1sog --rebuild`.
+3. Check the model policy (newest Sonnet, effort high, full IDs) — bump all four together.
+4. **Update Lupe's monthly check to the new base commit:**
+   `ncl tasks update --id monthly-upgrade-check-6c58 --group ag-1778023201501-lupe01 --prompt '…'`
+   (replace `6d8e0c91` in both places with the new upstream commit, and drop carried
+   patches from item 2 that upstream has fixed).
+5. Re-check upstream issues #3456 (button custom_id) and #3984 (PreCompact hook); drop
+   `parseNcqCustomId` once upstream decodes `\n<value>` itself.
